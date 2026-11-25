@@ -26,6 +26,10 @@ RUN chown -R agent:agent /app
 USER agent
 
 ENV PATH=/home/agent/.local/bin:$PATH
+# Packages were installed with `pip install --user` as root into /root/.local and copied to
+# /home/agent/.local. Without PYTHONUSERBASE the non-root user cannot find them
+# (ModuleNotFoundError: No module named 'uvicorn') and the container crash-loops.
+ENV PYTHONUSERBASE=/home/agent/.local
 ENV PYTHONPATH=/app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
