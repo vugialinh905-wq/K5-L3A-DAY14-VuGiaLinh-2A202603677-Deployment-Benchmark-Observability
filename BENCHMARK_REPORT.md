@@ -125,7 +125,15 @@ Chọn một request chậm thật gửi sau khi stack chạy bình thường (m
 {"ts": "2026-11-25T09:35:22.446011+00:00", "level": "INFO", "service": "observable-agent", "instance": "a2e4cc844e96", "event": "http_request", "trace_id": "a7f7310d22eedf8c118f69271a011854", "span_id": "9bbdad2a2dd1483a", "request_id": "f1938f30f0d1", "method": "POST", "route": "/ask", "status": 200, "ms": 1694.2}
 ```
 
-Log `llm_ms: 1667.5` khớp với span `chat mock-llm-small` (1668,4 ms) trong Jaeger.
+**Từ dòng log `llm_error` sang trace (Exercise 7.5, bước 4):** chạy `docker compose logs agent | grep llm_error | head -1` được:
+
+```json
+{"ts": "2026-11-25T10:11:50.222523+00:00", "level": "INFO", "service": "observable-agent", "instance": "f297426292c8", "event": "llm_error", "trace_id": "6f08e7c0252e3cb395516eca7a07fae9", "span_id": "027f95b72e085f17", "request_id": "5c3a4888fe06", "error": "Upstream LLM error: 503 Service Unavailable (mock)"}
+```
+
+Tìm lại `trace_id` `6f08e7c0252e3cb395516eca7a07fae9` trong Jaeger (qua API của Jaeger) thì thấy đúng request đó: `POST /ask` 142,0 ms và các span `agent.run`, `chat mock-llm-small` đều có `status_code=2` (lỗi). Hai span `agent.run` và `chat mock-llm-small` có event `exception` với `exception.type = utils.mock_llm.LLMError` và `exception.message = "Upstream LLM error: 503 Service Unavailable (mock)"`, khớp nội dung dòng log. Span `chat` mất 91,8 ms rồi lỗi, `agent.retrieve_context` 23,7 ms không lỗi, tức là lỗi xảy ra ở lời gọi LLM, không phải ở retrieval.
+
+Log `llm_ms: 1667.5` (của request chậm ở trên) khớp với span `chat mock-llm-small` (1668,4 ms) trong Jaeger.
 
 Trace trong ảnh `jaeger-slow-trace.png` chính là trace này. Ảnh `jaeger-error-trace.png` là trace `54cb23ab40b88c2467dcf37762f4e0a3` (thí nghiệm A, 921,9 ms, `POST /ask` trả 503, span `chat mock-llm-small` có event `exception`).
 

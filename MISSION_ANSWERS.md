@@ -44,7 +44,7 @@ Nó chạy được, nhưng không production-ready vì các lý do ở 1.1.
 | CORS | Không | Giới hạn origin theo config | Chặn trình duyệt lạ gọi API |
 | Input | Query param, không validate | Body JSON, trả 422 khi thiếu `question` | Kiểm soát đầu vào |
 
-Output chạy bản production:
+Output chạy bản production (sau khi `cp .env.example .env` theo đề; `OPENAI_API_KEY` để trống nên dùng mock LLM, `AGENT_API_KEY` để trống vẫn chạy vì `ENVIRONMENT=development`, còn ở production thì `validate()` sẽ báo lỗi; file `.env` đã xóa sau khi chạy, không commit):
 
 ```
 $ curl http://localhost:8000/health
@@ -208,11 +208,11 @@ with token -> {"question":"Explain JWT","answer":"Agent đang hoạt động t�
 - **Bypass cho admin:** không bỏ hẳn limit mà dùng `rate_limiter_admin` (100/phút) khi `role == "admin"`.
 - Hạn chế: state nằm trong RAM của từng process, nên khi scale nhiều instance mỗi instance đếm riêng. Bản Part 6 chuyển sang Redis để khắc phục.
 
-Gọi liên tục sau khi đã dùng 1 request (user `student`): 9 request tiếp theo → 200, từ request thứ 10 trở đi → **429**.
+Gọi liên tục 20 lần bằng token của `student` (server mới khởi động, giới hạn 10 request/phút): 10 request đầu → 200, từ request thứ 11 đến thứ 20 → **429**.
 
 ```
-call 1..9  -> 200
-call 10..14 -> 429
+call 1..10  -> 200
+call 11..20 -> 429
 {"detail":{"error":"Rate limit exceeded","limit":10,"window_seconds":60,"retry_after_seconds":59}}
 HTTP/1.1 429 Too Many Requests
 x-ratelimit-limit: 10
