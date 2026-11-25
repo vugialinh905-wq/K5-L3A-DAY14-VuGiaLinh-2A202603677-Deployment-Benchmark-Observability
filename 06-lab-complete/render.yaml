@@ -2,7 +2,9 @@ services:
   - type: web
     name: day14-agent
     runtime: docker
-    dockerfilePath: ./Dockerfile
+    # render.yaml nằm trong thư mục con nên chỉ rõ đường dẫn tính từ gốc repo
+    dockerfilePath: ./06-lab-complete/Dockerfile
+    dockerContext: ./06-lab-complete
     healthCheckPath: /health
     plan: free
     envVars:
