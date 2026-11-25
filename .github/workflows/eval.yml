@@ -1,0 +1,27 @@
+name: quality-gate
+
+# Exercise 7.3: chặn merge khi chất lượng agent giảm.
+# run_eval.py trả exit code 1 khi accuracy < --min-accuracy hoặc có câu bị regression,
+# nên job fail và pull request không merge được (khi bật "Require status checks").
+on: [pull_request]
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run agent v2 and eval
+        working-directory: 06-lab-complete/benchmark-observability/develop
+        env:
+          AGENT_VERSION: v2
+          MOCK_ERROR_RATE: "0"   # tắt lỗi ngẫu nhiên để eval không bị nhiễu
+        run: |
+          pip install -r requirements.txt
+          python app.py &
+          sleep 3
+          python eval/run_eval.py --url http://localhost:8000 --min-accuracy 0.85

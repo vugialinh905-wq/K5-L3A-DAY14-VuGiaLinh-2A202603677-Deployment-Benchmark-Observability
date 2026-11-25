@@ -153,6 +153,9 @@ $ curl http://localhost:8000/health      # gọi thẳng agent, không qua nginx
 - 4 lệnh tự kiểm: `/health` → **200**, `/ready` → **200**, `POST /ask` không key → **401**, `POST /ask` có `X-API-Key` → **200**.
 - **Screenshot:** `screenshots/dashboard.png`, `screenshots/running.png`, `screenshots/test.png`
 
+- **Xem logs và biến môi trường trên Render:** Dashboard → service `day14-agent` → tab **Logs** (log stdout của container, ở đây là các dòng JSON của agent) và tab **Environment** (danh sách biến; `AGENT_API_KEY` do Render sinh, `REDIS_URL` lấy từ Key Value `day14-redis`). Đổi biến ở tab Environment rồi Save thì Render redeploy service.
+- **Railway (Exercise 3.1):** mình **chưa deploy** lên Railway, chỉ so sánh cấu hình hai nền tảng ở bảng dưới (rubric cho phép thay phần deploy nền tảng còn lại bằng bản so sánh).
+
 ### So sánh `railway.toml` và `render.yaml` (Exercise 3.2)
 
 | | Railway (`railway.toml`) | Render (`render.yaml`) |
@@ -221,7 +224,18 @@ Tài khoản `teacher` (admin): 15 request liên tiếp đều trả 200.
 
 ### Exercise 4.4: Cost guard — cách mình làm
 
-Cài đặt thật nằm ở `06-lab-complete/app/cost_guard.py`:
+**Phần theo đúng đề `CODE_LAB.md`:** hàm `check_budget(user_id, estimated_cost) -> bool` nằm ở `04-api-gateway/production/cost_guard.py`: budget 10 USD/tháng mỗi user, lưu trong Redis với khoá `budget:<user>:<YYYY-MM>` (sang tháng mới là khoá mới nên tự reset), cộng bằng `INCRBYFLOAT`, khoá hết hạn sau 32 ngày. Test với Redis thật (`redis:7-alpine`):
+
+```
+alice request 1: estimated $4   -> allowed=True
+alice request 2: estimated $4   -> allowed=True
+alice request 3: estimated $4   -> allowed=False   (8 + 4 > 10)
+alice request 4: estimated $1.5 -> allowed=True    (8 + 1.5 = 9.5)
+bob   request 1: estimated $9.99 -> allowed=True    (user khác có budget riêng)
+budget:alice:2026-11 = 9.5   ttl = 32.0 ngày
+```
+
+**Phần cho agent Part 6** (theo hợp đồng của script chấm) nằm ở `06-lab-complete/app/cost_guard.py`:
 
 - Mỗi request ghi chi phí vào Redis bằng `INCRBYFLOAT` vào khoá theo ngày `cost:YYYY-MM-DD`, kèm `EXPIRE` 2 ngày. `INCRBYFLOAT` là atomic nên nhiều worker/instance cộng dồn an toàn.
 - Chi phí = `input_tokens/1000 × 0.00015 + output_tokens/1000 × 0.0006` (giá gpt-4o-mini; token ước lượng ≈ 1.3 × số từ vì mock LLM không trả usage thật).
@@ -339,6 +353,8 @@ Chạy đầy đủ (có Docker) trong WSL2, Python 3.14. Image build ra **238 M
 ================================================================
 ```
 
+Sau khi deploy mình chạy thêm `python check_production_ready.py --public-url https://day14-agent-2ps9.onrender.com` (đầy đủ, có Docker): vẫn **PASS 12/12, 44/44 checks**, trong đó có `Public URL: GET .../health → 200`.
+
 Ghi chú: `requirements.txt` của `06-lab-complete` được đổi từ ghim phiên bản cứng (`pydantic==2.9.0`...) sang khoảng tối thiểu (`pydantic>=2.9.0,<3.0`...) vì Python 3.14 trên máy chạy script không cài được `pydantic==2.9.0` (không có bản dựng sẵn, phải biên dịch Rust). Image Docker vẫn dùng Python 3.11. `check_production_ready.py` không bị sửa.
 
 ---
@@ -354,4 +370,5 @@ Theo `RULES.md`, mọi lần dùng AI cho code Part 6 hoặc câu trả lời đ
 | 3 | Claude Code | Sửa lỗi cài thư viện trên Python 3.14 | Nới ghim phiên bản trong `requirements.txt` | Cài lại thành công, script chấm vẫn PASS |
 | 5 | Claude Code | Hỗ trợ deploy Render và đóng gói ảnh Part 3 | Sửa `render.yaml` (đường dẫn Dockerfile cho blueprint trong thư mục con); chép 3 ảnh tự chụp của mình (`dashboard.png`, `test.png`, `running.png`) vào `screenshots/` | Cả ba ảnh là ảnh mình tự chụp màn hình (trang Render hiện Live, terminal 4 lệnh curl, trang `/health` trong trình duyệt) |
 | 6 | Claude Code | Làm Part 7: chạy load test, eval, stack Docker, thí nghiệm alert, chụp ảnh, viết báo cáo | Chạy `load_test.py` / `run_eval.py` / Locust; sửa `KNOWLEDGE_BASE` (thêm tài liệu HPA và JWT) ở `develop` và `production`; sửa `production/Dockerfile` (thêm `ENV PYTHONUSERBASE`) vì container agent crash; viết `BENCHMARK_REPORT.md`; chụp 4 ảnh Part 7 (Grafana, Prometheus alerts, 2 trace Jaeger) bằng Chrome chạy ẩn từ chính stack chạy trên máy | Số liệu trong báo cáo lấy từ file JSON/CSV trong `reports/` và `benchmark-results/` do lệnh chạy thật sinh ra; kết quả Locust đầu tiên (100 % lỗi 502 do container crash) đã bị xóa, không dùng; ảnh chụp mở lại để kiểm tra nội dung đúng với số liệu |
+| 7 | Claude Code | Rà lại `CODE_LAB.md` từng bước và bổ sung những mục còn thiếu | Cài `check_budget(user_id, estimated_cost)` Redis ở `04-api-gateway/production/cost_guard.py`; thêm metric `agent_question_length_chars` vào `develop/app.py`; tạo `.github/workflows/eval.yml`; chạy lại stack 30 user để đo trả lời Exercise 7.4; chạy `--public-url` | Test `check_budget` bằng Redis thật; mô phỏng job CI (v2 exit 0, v1 exit 1); đọc `/metrics`; số trong mục 4.5 của báo cáo lấy từ truy vấn Prometheus lúc chạy |
 | 4 | Claude Code | Chạy các exercise Part 1–5 và viết `MISSION_ANSWERS.md` | Lệnh chạy, output thật và bản nháp câu trả lời | Output dán trong file là output của lệnh đã chạy trên máy; câu trả lời khái niệm cần tự đọc lại và hiểu trước khi nộp |

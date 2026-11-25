@@ -92,6 +92,12 @@ LLM_COST = Counter(
     "llm_cost_usd_total", "Tổng chi phí LLM (USD)",
     ["model"],
 )
+# Exercise 7.1: phân bố độ dài câu hỏi. Dùng Histogram (các bucket cố định) thay vì
+# label `length=...` vì độ dài có vô số giá trị → label sẽ làm cardinality bùng nổ.
+QUESTION_LENGTH = Histogram(
+    "agent_question_length_chars", "Độ dài câu hỏi (ký tự)",
+    buckets=(20, 50, 100, 200, 500, 1000, 2000),
+)
 AGENT_INFO = Gauge(
     "agent_info", "Thông tin phiên bản agent (luôn = 1)",
     ["version", "model"],
@@ -154,6 +160,7 @@ class AskResponse(BaseModel):
 
 @app.post("/ask", response_model=AskResponse)
 async def ask(body: AskRequest, request: Request):
+    QUESTION_LENGTH.observe(len(body.question))  # Exercise 7.1
     # v2 có bước retrieval (RAG) → chính xác hơn nhưng prompt dài hơn → tốn token hơn
     context = await mock_llm.search_knowledge_base(body.question) if AGENT_VERSION == "v2" else None
 

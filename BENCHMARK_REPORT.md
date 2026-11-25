@@ -70,7 +70,7 @@ Nguồn: `reports/eval_v1.json`, `eval_v2.json`, `eval_v2_fixed.json`.
 
 Chỉ hai câu hỏi này chứa các từ khóa mới nên không câu nào bị ảnh hưởng: eval sau khi sửa báo 2 câu được cải thiện, 0 regression. Mình chép cùng thay đổi sang `production/utils/mock_llm.py` để stack Docker dùng cùng dữ liệu.
 
-**Quality gate:** chạy eval v1 với `--baseline reports/eval_v2.json` cho 20 câu regression và **exit code 1**. Trong CI, bước `python eval/run_eval.py --url ... --min-accuracy 0.85` sẽ fail job và chặn merge.
+**Quality gate:** chạy eval v1 với `--baseline reports/eval_v2.json` cho 20 câu regression và **exit code 1**. Job CI nằm ở `.github/workflows/eval.yml` (chạy trên `pull_request`, khởi động agent v2 với `MOCK_ERROR_RATE=0`, rồi chạy `python eval/run_eval.py --url http://localhost:8000 --min-accuracy 0.85`). Mình mô phỏng đúng các lệnh đó trên máy: agent v2 đạt 100 % và job thoát **exit code 0**, agent v1 đạt 4,3 % và job thoát **exit code 1**, nên job fail và pull request không merge được (khi bật "Require status checks" trong branch protection). Mình chưa chạy workflow trên GitHub Actions thật.
 
 **Trade-off chất lượng / chi phí / latency (v1 so với v2):** v2 dùng nhiều token hơn khoảng 1,9 lần (109,0 so với 57,4 token/câu) và p95 eval chậm hơn một chút (206,1 so với 188,6 ms) do thêm bước retrieval, nhưng accuracy từ 4,3 % lên 91,3 %. Chi phí trên mỗi câu trả lời **đúng** của v2 rẻ hơn v1 khoảng 11 lần (0,0000362 so với 0,000408 USD) vì v1 gần như không trả lời đúng câu nào. Chi phí tăng và latency tăng nhẹ là đáng đổi.
 
@@ -128,6 +128,39 @@ Chọn một request chậm thật gửi sau khi stack chạy bình thường (m
 Log `llm_ms: 1667.5` khớp với span `chat mock-llm-small` (1668,4 ms) trong Jaeger.
 
 Trace trong ảnh `jaeger-slow-trace.png` chính là trace này. Ảnh `jaeger-error-trace.png` là trace `54cb23ab40b88c2467dcf37762f4e0a3` (thí nghiệm A, 921,9 ms, `POST /ask` trả 503, span `chat mock-llm-small` có event `exception`).
+
+### 4.4 Exercise 7.1 — đọc metrics của agent
+
+Chạy agent v2 (`AGENT_VERSION=v2 PORT=8002 python app.py`), gọi `/ask` rồi xem `/metrics`.
+
+**Một ví dụ cho mỗi loại metric** (trích từ output `/metrics`):
+
+| Loại | Ví dụ | Vì sao thuộc loại này |
+|---|---|---|
+| Counter | `http_requests_total{method="POST",route="/ask",status="200"} 3.0` | Chỉ tăng, đếm số request; dùng với `rate()` |
+| Gauge | `agent_in_flight_requests 0.0` | Lên xuống theo số request đang xử lý |
+| Histogram | `http_request_duration_seconds_bucket{le="0.2",method="POST",route="/ask"} 2.0` | Chia latency vào các bucket để tính percentile bằng `histogram_quantile()` |
+
+**Câu hỏi: nếu dùng URL thật (`request.url.path`) thay cho `route.path` làm label `route` thì chuyện gì xảy ra khi bot quét hàng nghìn URL lạ (`/wp-admin`, `/.env`, `/a1b2c3`...)?** Mỗi URL khác nhau là một giá trị label khác nhau, tức là một time series mới cho mỗi metric có label đó (counter và mọi bucket của histogram). Hàng nghìn URL lạ sinh hàng nghìn series (cardinality bùng nổ), Prometheus tốn RAM và disk, truy vấn chậm, có thể bị OOM. Thêm nữa kẻ tấn công có thể cố ý quét để làm hỏng hệ thống giám sát. Dùng `route.path` (mẫu như `/ask`) và gán `unmatched` cho URL không khớp route nào giữ số series nhỏ và cố định.
+
+**Nhiệm vụ: thêm metric phân bố độ dài câu hỏi `agent_question_length_chars`.** Đã thêm vào `06-lab-complete/benchmark-observability/develop/app.py`: một `Histogram` với các bucket `(20, 50, 100, 200, 500, 1000, 2000)` và gọi `QUESTION_LENGTH.observe(len(body.question))` ở đầu endpoint `ask`. Dùng Histogram, không dùng label `length=...`, vì độ dài có vô số giá trị. Kiểm tra bằng 3 câu hỏi (2, 40 và 150 ký tự):
+
+```
+agent_question_length_chars_bucket{le="20.0"} 1.0
+agent_question_length_chars_bucket{le="50.0"} 2.0
+agent_question_length_chars_bucket{le="200.0"} 3.0
+agent_question_length_chars_count 3.0
+agent_question_length_chars_sum 192.0
+```
+
+### 4.5 Exercise 7.4 — đọc dashboard Grafana (30 user, ramp 5)
+
+Số đo bằng truy vấn Prometheus sau khi Locust (30 user, ramp 5) chạy 150 giây trên stack mặc định (2 agent, model nhỏ, agent v2). Đây là giá trị tức thời của cửa sổ 1 phút, nên thay đổi giữa các lần đo.
+
+1. **p95 và avg đang là bao nhiêu? Khoảng cách giữa chúng nói lên điều gì?** p95 ≈ 0,95 s, avg ≈ 0,264 s, p50 ≈ 0,177 s. p95 gấp khoảng 3,6 lần avg và p50 gần bằng latency nền: số đông request nhanh (~0,18 s) nhưng một nhóm nhỏ request chậm (~1,7 s, do 3 % request bị `MOCK_SLOW_RATE`) kéo p95 lên cao mà avg tăng ít. Khoảng cách lớn giữa avg và p95 là dấu hiệu của tail latency. Lưu ý p95 được ước lượng từ bucket của histogram nên là giá trị nội suy và dao động theo cửa sổ.
+2. **Nginx có chia đều traffic cho 2 instance không?** Có: mỗi instance nhận **9,13 request/giây** (hai giá trị trùng nhau đến 4 chữ số), đúng với round-robin của Nginx.
+3. **Vì sao input tokens/s lớn hơn output tokens/s?** Đo được input ≈ 1405 token/s, output ≈ 736 token/s (khoảng 1,9 lần). Agent v2 có bước retrieval nên prompt gồm system prompt, tài liệu tìm được và câu hỏi, dài hơn câu trả lời. Ví dụ một request: 91 token vào, 55 token ra.
+4. **`curl http://localhost:8080/metrics` trả về gì? Vì sao?** Trả về **404 Not Found** từ Nginx. `nginx.conf` chặn `/metrics` từ bên ngoài vì metrics lộ thông tin nội bộ (số request, latency, chi phí, phiên bản) và không nên public; Prometheus vẫn đọc được vì nó scrape trực tiếp từng agent trong mạng Docker nội bộ (service discovery qua DNS).
 
 ---
 

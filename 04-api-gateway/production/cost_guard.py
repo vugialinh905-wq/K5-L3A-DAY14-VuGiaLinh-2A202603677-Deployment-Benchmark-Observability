@@ -126,3 +126,48 @@ class CostGuard:
 
 # Singleton
 cost_guard = CostGuard(daily_budget_usd=1.0, global_daily_budget_usd=10.0)
+
+
+# ──────────────────────────────────────────────────────────
+# Exercise 4.4 — budget theo tháng của từng user, lưu trong Redis
+# ──────────────────────────────────────────────────────────
+MONTHLY_BUDGET_USD = 10.0
+
+_redis_client = None
+
+
+def _get_redis():
+    """Tạo client Redis khi cần (lazy), để import module không đòi Redis phải chạy sẵn."""
+    global _redis_client
+    if _redis_client is None:
+        import os
+        import redis
+        _redis_client = redis.from_url(
+            os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True
+        )
+    return _redis_client
+
+
+def check_budget(user_id: str, estimated_cost: float) -> bool:
+    """
+    Return True nếu còn budget (và ghi nhận chi phí), False nếu sẽ vượt.
+
+    Logic:
+    - Mỗi user có budget $10/tháng
+    - Track spending trong Redis, khoá theo tháng: budget:<user>:<YYYY-MM>
+      → sang tháng mới là khoá mới nên tự "reset đầu tháng"
+    - Khoá hết hạn sau 32 ngày để Redis tự dọn
+    """
+    from datetime import datetime
+
+    r = _get_redis()
+    month_key = datetime.now().strftime("%Y-%m")
+    key = f"budget:{user_id}:{month_key}"
+
+    current = float(r.get(key) or 0)
+    if current + estimated_cost > MONTHLY_BUDGET_USD:
+        return False
+
+    r.incrbyfloat(key, estimated_cost)
+    r.expire(key, 32 * 24 * 3600)
+    return True
