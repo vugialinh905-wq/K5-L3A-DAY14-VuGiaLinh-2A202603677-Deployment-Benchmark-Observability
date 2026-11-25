@@ -142,13 +142,16 @@ $ curl http://localhost:8000/health      # gọi thẳng agent, không qua nginx
 
 ## Part 3: Cloud Deployment
 
-> **Trạng thái:** phần deploy thật (Exercise 3.1 Railway / 3.2 Render) **chưa thực hiện**: cần tài khoản và đăng nhập nền tảng. Các mục dưới đây đánh dấu rõ cái gì đã làm, cái gì còn thiếu. Xem thêm `DEPLOYMENT.md`.
+> **Trạng thái:** đã deploy agent Part 6 lên **Render** (Exercise 3.2). Chưa deploy lên Railway; phần so sánh hai nền tảng nằm bên dưới. Chi tiết lệnh test: `DEPLOYMENT.md`.
 
 ### Exercise 3.1 / 3.2: Deploy
 
-- Config sẵn sàng deploy cho agent Part 6: `06-lab-complete/railway.toml` và `06-lab-complete/render.yaml` (đã PASS tiêu chí 12 của script chấm).
-- **URL public:** _chưa có — cần điền sau khi deploy_
-- **Screenshot:** _chưa có — `screenshots/dashboard.png`, `running.png`, `test.png`_
+- Config deploy cho agent Part 6: `06-lab-complete/railway.toml` và `06-lab-complete/render.yaml` (đã PASS tiêu chí 12 của script chấm).
+- Deploy bằng Render Blueprint từ nhánh `lab/day14-part6`, Blueprint Path `06-lab-complete/render.yaml`. Render tạo một Key Value (Redis) `day14-redis` và một web service Docker `day14-agent`; `REDIS_URL` được nối từ Key Value, `AGENT_API_KEY` do Render tự sinh.
+- Vì `render.yaml` nằm trong thư mục con nên phải chỉ rõ `dockerfilePath: ./06-lab-complete/Dockerfile` và `dockerContext: ./06-lab-complete`, nếu không Render sẽ dùng nhầm Dockerfile ở gốc repo.
+- **URL public:** https://day14-agent-2ps9.onrender.com
+- 4 lệnh tự kiểm: `/health` → **200**, `/ready` → **200**, `POST /ask` không key → **401**, `POST /ask` có `X-API-Key` → **200**.
+- **Screenshot:** `screenshots/dashboard.png`, `screenshots/running.png`, `screenshots/test.png`
 
 ### So sánh `railway.toml` và `render.yaml` (Exercise 3.2)
 
@@ -349,4 +352,5 @@ Theo `RULES.md`, mọi lần dùng AI cho code Part 6 hoặc câu trả lời đ
 | 1 | Claude Code (Sonnet 5.5) | Đọc đề lab, tóm tắt rubric và cách nộp | Bản tóm tắt README, RUBRIC, SUBMISSION, CHECKPOINTS, RULES | Đối chiếu với file trong repo |
 | 2 | Claude Code | Hoàn thành các TODO của Part 6 trong `06-lab-complete/` | Code `app/*.py`, `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.env.example`, `railway.toml`, `render.yaml` | Chạy `check_production_ready.py` đầy đủ, kết quả PASS 12/12 (dán ở trên) |
 | 3 | Claude Code | Sửa lỗi cài thư viện trên Python 3.14 | Nới ghim phiên bản trong `requirements.txt` | Cài lại thành công, script chấm vẫn PASS |
+| 5 | Claude Code | Hỗ trợ deploy Render và đóng gói ảnh Part 3 | Sửa `render.yaml` (đường dẫn Dockerfile cho blueprint trong thư mục con); chép 2 ảnh tự chụp của mình (`dashboard.png`, `test.png`) vào `screenshots/`; chụp `running.png` bằng Chrome chạy ẩn, mở thẳng `/health` của service | Ảnh dashboard và terminal là ảnh mình chụp màn hình; `running.png` do công cụ chụp trang thật, nội dung khớp lệnh curl `/health` |
 | 4 | Claude Code | Chạy các exercise Part 1–5 và viết `MISSION_ANSWERS.md` | Lệnh chạy, output thật và bản nháp câu trả lời | Output dán trong file là output của lệnh đã chạy trên máy; câu trả lời khái niệm cần tự đọc lại và hiểu trước khi nộp |
